@@ -10,6 +10,15 @@
 #include <MouseBLE.h>
 #include <PicoBluetoothBLEHID.h>
 
+#include <Adafruit_NeoPixel.h>
+#ifdef __AVR__
+ #include <avr/power.h> // Required for 16 MHz Adafruit Trinket
+#endif
+
+#define PIN       0 // On Trinket or Gemma, suggest changing this to 1
+#define NUMPIXELS 1 // How many NeoPixels are attached to the Arduino?
+Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
+
 #define WATCHDOG_TIMEOUT 5000
 #define LED_TIMEOUT 500
 #define JIGGLE_TIMEOUT_HIGH 240000
@@ -24,6 +33,8 @@
 #define BUTTON_TIMEOUT 100
 
 #define random_timeout(t) random(t / 2, t)
+
+bool MouseEnabled = false;
 
 class Event {
 public:
@@ -155,7 +166,8 @@ class JiggleTimer : public Timer {
 public:
   void run_now() {
     timeout = RUN_NOW;
-    times = random(2, 5);
+    //times = random(2, 5);
+    times = 1;
     Serial.printf("Start Jiggle (times=%d)\n", times);
   }
 protected:
@@ -171,6 +183,12 @@ protected:
       times = 0;
       return;
     }
+    if (!MouseEnabled) {
+      Serial.println("Jiggle is skipped because MouseEnabled disabled");
+      timeout = 0;
+      times = 0;
+      return;
+    }
     if (--times > 0) {
       timeout = random_timeout(12);
     } else {
@@ -178,8 +196,17 @@ protected:
     }
     long x = random(-10, 10);
     long y = random(-10, 10);
-    Serial.printf("Jiggle (%ld, %ld)\n", x, y);
-    MouseBLE.move(x, y, 0);
+    long mouseshift = random(3,6);
+    //Serial.printf("Jiggle (%ld, %ld)\n", x, y);
+    Serial.printf("Jiggle (%ld)\n", mouseshift);
+    //MouseBLE.move(x, y, 0);
+    MouseBLE.move(mouseshift, mouseshift, 0);
+    delay(250);
+    MouseBLE.move(mouseshift, -mouseshift, 0);
+    delay(250);
+    MouseBLE.move(-mouseshift, -mouseshift, 0);
+    delay(250);
+    MouseBLE.move(-mouseshift, mouseshift, 0);
   }
 private:
   unsigned int times;
@@ -301,7 +328,21 @@ protected:
       Serial.flush();
       rp2040.rebootToBootloader();
     } else {
-      jiggle_interval->run_now();
+      //jiggle_interval->run_now();
+      Serial.printf("MouseEnabled was (%s)\n", MouseEnabled?"true":"false");
+      MouseEnabled = !MouseEnabled;
+      if (MouseEnabled) {
+        pixels.setPixelColor(NUMPIXELS - 1, pixels.Color(0, 255, 0));
+        pixels.show();
+        jiggle_interval->run_now();
+      } else {
+        pixels.setPixelColor(NUMPIXELS - 1, pixels.Color(255, 0, 0));
+        pixels.show();
+        pixels.clear();
+      }
+
+      Serial.printf("MouseEnabled (%s)\n", MouseEnabled?"true":"false");
+
     }
   }
 private:
@@ -311,10 +352,9 @@ private:
 
 EventContainer events;
 
-
 void setup() {
   Serial.begin(115200);
-  MouseBLE.begin("Mouse");
+  MouseBLE.begin("Mousey Mouse");
   delay(5000);
 
   // if analog input pin A0 is unconnected, random analog
@@ -335,7 +375,19 @@ void setup() {
   events.setup();
   Serial.println("Start Mouse Jiggle");
 
+  Serial.printf("MouseEnabled (%s)\n", MouseEnabled?"true":"false");
+
   led->run_now(3);
+
+  pixels.begin();
+  pixels.clear();
+  pixels.setBrightness(12);
+  if (MouseEnabled) {
+    pixels.setPixelColor(NUMPIXELS - 1, pixels.Color(0, 255, 0));
+  } else {
+    pixels.setPixelColor(NUMPIXELS - 1, pixels.Color(255, 0, 0));
+  }
+  pixels.show();
 }
 
 void loop() {
